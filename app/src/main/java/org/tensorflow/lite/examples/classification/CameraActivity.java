@@ -20,7 +20,6 @@ import android.Manifest;
 import android.app.Fragment;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.hardware.Camera;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
@@ -59,7 +58,6 @@ import org.tensorflow.lite.examples.classification.tflite.Classifier.Recognition
 
 public abstract class CameraActivity extends AppCompatActivity
     implements OnImageAvailableListener,
-        Camera.PreviewCallback,
         View.OnClickListener,
         AdapterView.OnItemSelectedListener {
   private static final Logger LOGGER = new Logger();
@@ -131,20 +129,14 @@ public abstract class CameraActivity extends AppCompatActivity
         new ViewTreeObserver.OnGlobalLayoutListener() {
           @Override
           public void onGlobalLayout() {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
-              gestureLayout.getViewTreeObserver().removeGlobalOnLayoutListener(this);
-            } else {
-              gestureLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
-            }
-            //                int width = bottomSheetLayout.getMeasuredWidth();
+            gestureLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
             int height = gestureLayout.getMeasuredHeight();
-
             sheetBehavior.setPeekHeight(height);
           }
         });
     sheetBehavior.setHideable(false);
 
-    sheetBehavior.setBottomSheetCallback(
+    sheetBehavior.addBottomSheetCallback(
         new BottomSheetBehavior.BottomSheetCallback() {
           @Override
           public void onStateChanged(@NonNull View bottomSheet, int newState) {
@@ -208,51 +200,6 @@ public abstract class CameraActivity extends AppCompatActivity
 
   protected byte[] getLuminance() {
     return yuvBytes[0];
-  }
-
-  /** Callback for android.hardware.Camera API */
-  @Override
-  public void onPreviewFrame(final byte[] bytes, final Camera camera) {
-    if (isProcessingFrame) {
-      LOGGER.w("Dropping frame!");
-      return;
-    }
-
-    try {
-      // Initialize the storage bitmaps once when the resolution is known.
-      if (rgbBytes == null) {
-        Camera.Size previewSize = camera.getParameters().getPreviewSize();
-        previewHeight = previewSize.height;
-        previewWidth = previewSize.width;
-        rgbBytes = new int[previewWidth * previewHeight];
-        onPreviewSizeChosen(new Size(previewSize.width, previewSize.height), 90);
-      }
-    } catch (final Exception e) {
-      LOGGER.e(e, "Exception!");
-      return;
-    }
-
-    isProcessingFrame = true;
-    yuvBytes[0] = bytes;
-    yRowStride = previewWidth;
-
-    imageConverter =
-        new Runnable() {
-          @Override
-          public void run() {
-            ImageUtils.convertYUV420SPToARGB8888(bytes, previewWidth, previewHeight, rgbBytes);
-          }
-        };
-
-    postInferenceCallback =
-        new Runnable() {
-          @Override
-          public void run() {
-            camera.addCallbackBuffer(bytes);
-            isProcessingFrame = false;
-          }
-        };
-    processImage();
   }
 
   /** Callback for Camera2 API */
@@ -463,27 +410,19 @@ public abstract class CameraActivity extends AppCompatActivity
     String cameraId = chooseCamera();
 
     Fragment fragment;
-    if (useCamera2API) {
       CameraConnectionFragment camera2Fragment =
           CameraConnectionFragment.newInstance(
-              new CameraConnectionFragment.ConnectionCallback() {
-                @Override
-                public void onPreviewSizeChosen(final Size size, final int rotation) {
-                  previewHeight = size.getHeight();
-                  previewWidth = size.getWidth();
-                  CameraActivity.this.onPreviewSizeChosen(size, rotation);
-                }
-              },
+                  (size, rotation) -> {
+                    previewHeight = size.getHeight();
+                    previewWidth = size.getWidth();
+                    CameraActivity.this.onPreviewSizeChosen(size, rotation);
+                  },
               this,
               getLayoutId(),
               getDesiredPreviewFrameSize());
 
       camera2Fragment.setCamera(cameraId);
       fragment = camera2Fragment;
-    } else {
-      fragment =
-          new LegacyCameraConnectionFragment(this, getLayoutId(), getDesiredPreviewFrameSize());
-    }
 
     getFragmentManager().beginTransaction().replace(R.id.container, fragment).commit();
   }
