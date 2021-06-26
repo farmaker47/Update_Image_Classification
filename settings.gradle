@@ -1,0 +1,2 @@
+rootProject.name = 'Update of Image classification project'
+include ':app', ':lib_support', ':lib_task_api', ':models'
