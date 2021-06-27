@@ -34,9 +34,9 @@ import org.tensorflow.lite.examples.classification.tflite.Classifier;
 import org.tensorflow.lite.examples.classification.tflite.Classifier.Device;
 import org.tensorflow.lite.examples.classification.tflite.Classifier.Model;
 
-public class ClassifierActivity extends CameraActivity implements OnImageAvailableListener {
+public class ClassifierActivity extends CameraActivity {
     private static final Logger LOGGER = new Logger();
-    private static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
+    public static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
     private static final float TEXT_SIZE_DIP = 10;
     private Bitmap rgbFrameBitmap = null;
     private long lastProcessingTimeMs;
@@ -76,8 +76,8 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
             return;
         }
 
-        previewWidth = size.getWidth();
-        previewHeight = size.getHeight();
+        //previewWidth = size.getWidth();
+        //previewHeight = size.getHeight();
 
         sensorOrientation = rotation - getScreenOrientation();
         LOGGER.i("Camera orientation relative to screen canvas: %d", sensorOrientation);
@@ -87,8 +87,32 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
     }
 
     @Override
+    public void onStartCameraX(final Size size, final int rotation ){
+        final float textSizePx =
+                TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, TEXT_SIZE_DIP, getResources().getDisplayMetrics());
+        borderedText = new BorderedText(textSizePx);
+        borderedText.setTypeface(Typeface.MONOSPACE);
+
+        recreateClassifier(getModel(), getDevice(), getNumThreads());
+        if (classifier == null) {
+            LOGGER.e("No classifier on preview!");
+            return;
+        }
+
+        //previewWidth = size.getWidth();
+        //previewHeight = size.getHeight();
+
+        sensorOrientation = 90;//rotation - getScreenOrientation();
+        LOGGER.i("Camera orientation relative to screen canvas: %d", sensorOrientation);
+
+        LOGGER.i("Initializing at size %dx%d", previewWidth, previewHeight);
+        rgbFrameBitmap = Bitmap.createBitmap(previewWidth, previewHeight, Config.ARGB_8888);
+    }
+
+    @Override
     protected void processImage() {
-        rgbFrameBitmap.setPixels(getRgbBytes(), 0, previewWidth, 0, 0, previewWidth, previewHeight);
+        rgbFrameBitmap.setPixels(getRgbBytesFromCameraX(), 0, previewWidth, 0, 0, previewWidth, previewHeight);
         final int cropSize = Math.min(previewWidth, previewHeight);
 
         runInBackground(
@@ -97,7 +121,7 @@ public class ClassifierActivity extends CameraActivity implements OnImageAvailab
                         final long startTime = SystemClock.uptimeMillis();
                         final List<Classifier.Recognition> results = classifier.recognizeImage(rgbFrameBitmap, sensorOrientation);
                         lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
-                        LOGGER.v("Detect: %s", results);
+                        LOGGER.e("Degrees: %s", results);
 
                         runOnUiThread(
                                 () -> {

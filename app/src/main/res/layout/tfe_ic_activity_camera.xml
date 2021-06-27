@@ -33,6 +33,10 @@
             android:background="@android:color/black"
             tools:context="org.tensorflow.lite.examples.classification.CameraActivity" />
 
+        <androidx.camera.view.PreviewView
+            android:id="@+id/viewFinder"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
 
         <androidx.appcompat.widget.Toolbar
             android:id="@+id/toolbar"

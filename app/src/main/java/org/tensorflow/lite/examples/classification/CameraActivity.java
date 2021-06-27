@@ -17,6 +17,7 @@
 package org.tensorflow.lite.examples.classification;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Fragment;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -33,7 +34,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Trace;
+
 import androidx.appcompat.app.AppCompatActivity;
+
+import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
 import android.view.View;
@@ -45,11 +49,25 @@ import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.UiThread;
+import androidx.camera.core.Camera;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.Preview;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.view.PreviewView;
+import androidx.core.content.ContextCompat;
+import androidx.lifecycle.LifecycleOwner;
+
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
+import com.google.common.util.concurrent.ListenableFuture;
+
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+
 import org.tensorflow.lite.examples.classification.env.ImageUtils;
 import org.tensorflow.lite.examples.classification.env.Logger;
 import org.tensorflow.lite.examples.classification.tflite.Classifier.Device;
@@ -57,7 +75,7 @@ import org.tensorflow.lite.examples.classification.tflite.Classifier.Model;
 import org.tensorflow.lite.examples.classification.tflite.Classifier.Recognition;
 
 public abstract class CameraActivity extends AppCompatActivity
-    implements OnImageAvailableListener,
+        implements OnImageAvailableListener,
         View.OnClickListener,
         AdapterView.OnItemSelectedListener {
   private static final Logger LOGGER = new Logger();
@@ -65,31 +83,35 @@ public abstract class CameraActivity extends AppCompatActivity
   private static final int PERMISSIONS_REQUEST = 1;
 
   private static final String PERMISSION_CAMERA = Manifest.permission.CAMERA;
-  protected int previewWidth = 0;
-  protected int previewHeight = 0;
+  protected int previewWidth = 640;
+  protected int previewHeight = 480;
+
+  private PreviewView previewView;
+  private byte[][] yuvBytes = new byte[3][];
+  private int[] rgbBytes = null;
+  private int yRowStride;
+
   private Handler handler;
   private HandlerThread handlerThread;
   private boolean useCamera2API;
   private boolean isProcessingFrame = false;
-  private byte[][] yuvBytes = new byte[3][];
-  private int[] rgbBytes = null;
-  private int yRowStride;
+
   private Runnable postInferenceCallback;
   private Runnable imageConverter;
   private LinearLayout bottomSheetLayout;
   private LinearLayout gestureLayout;
   private BottomSheetBehavior<LinearLayout> sheetBehavior;
   protected TextView recognitionTextView,
-      recognition1TextView,
-      recognition2TextView,
-      recognitionValueTextView,
-      recognition1ValueTextView,
-      recognition2ValueTextView;
+          recognition1TextView,
+          recognition2TextView,
+          recognitionValueTextView,
+          recognition1ValueTextView,
+          recognition2ValueTextView;
   protected TextView frameValueTextView,
-      cropValueTextView,
-      cameraResolutionTextView,
-      rotationTextView,
-      inferenceTimeTextView;
+          cropValueTextView,
+          cameraResolutionTextView,
+          rotationTextView,
+          inferenceTimeTextView;
   protected ImageView bottomSheetArrowImageView;
   private ImageView plusImageView, minusImageView;
   private Spinner modelSpinner;
@@ -108,8 +130,14 @@ public abstract class CameraActivity extends AppCompatActivity
 
     setContentView(R.layout.tfe_ic_activity_camera);
 
+    // Execute this method to start the model
+    onStartCameraX(ClassifierActivity.DESIRED_PREVIEW_SIZE, 90);
+
     if (hasPermission()) {
-      setFragment();
+      //setFragment();
+
+      // Start CameraX
+      startCamera();
     } else {
       requestPermission();
     }
@@ -123,47 +151,47 @@ public abstract class CameraActivity extends AppCompatActivity
     gestureLayout = findViewById(R.id.gesture_layout);
     sheetBehavior = BottomSheetBehavior.from(bottomSheetLayout);
     bottomSheetArrowImageView = findViewById(R.id.bottom_sheet_arrow);
+    previewView = findViewById(R.id.viewFinder);
 
     ViewTreeObserver vto = gestureLayout.getViewTreeObserver();
     vto.addOnGlobalLayoutListener(
-        new ViewTreeObserver.OnGlobalLayoutListener() {
-          @Override
-          public void onGlobalLayout() {
-            gestureLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
-            int height = gestureLayout.getMeasuredHeight();
-            sheetBehavior.setPeekHeight(height);
-          }
-        });
+            new ViewTreeObserver.OnGlobalLayoutListener() {
+              @Override
+              public void onGlobalLayout() {
+                gestureLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                int height = gestureLayout.getMeasuredHeight();
+                sheetBehavior.setPeekHeight(height);
+              }
+            });
     sheetBehavior.setHideable(false);
 
     sheetBehavior.addBottomSheetCallback(
-        new BottomSheetBehavior.BottomSheetCallback() {
-          @Override
-          public void onStateChanged(@NonNull View bottomSheet, int newState) {
-            switch (newState) {
-              case BottomSheetBehavior.STATE_HIDDEN:
-                break;
-              case BottomSheetBehavior.STATE_EXPANDED:
-                {
-                  bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_down);
+            new BottomSheetBehavior.BottomSheetCallback() {
+              @Override
+              public void onStateChanged(@NonNull View bottomSheet, int newState) {
+                switch (newState) {
+                  case BottomSheetBehavior.STATE_HIDDEN:
+                    break;
+                  case BottomSheetBehavior.STATE_EXPANDED: {
+                    bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_down);
+                  }
+                  break;
+                  case BottomSheetBehavior.STATE_COLLAPSED: {
+                    bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_up);
+                  }
+                  break;
+                  case BottomSheetBehavior.STATE_DRAGGING:
+                    break;
+                  case BottomSheetBehavior.STATE_SETTLING:
+                    bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_up);
+                    break;
                 }
-                break;
-              case BottomSheetBehavior.STATE_COLLAPSED:
-                {
-                  bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_up);
-                }
-                break;
-              case BottomSheetBehavior.STATE_DRAGGING:
-                break;
-              case BottomSheetBehavior.STATE_SETTLING:
-                bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_up);
-                break;
-            }
-          }
+              }
 
-          @Override
-          public void onSlide(@NonNull View bottomSheet, float slideOffset) {}
-        });
+              @Override
+              public void onSlide(@NonNull View bottomSheet, float slideOffset) {
+              }
+            });
 
     recognitionTextView = findViewById(R.id.detected_item);
     recognitionValueTextView = findViewById(R.id.detected_item_value);
@@ -189,10 +217,149 @@ public abstract class CameraActivity extends AppCompatActivity
     numThreads = Integer.parseInt(threadsTextView.getText().toString().trim());
   }
 
+  private void startCamera() {
+    ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
+
+    cameraProviderFuture.addListener(() -> {
+      // Camera provider is now guaranteed to be available
+
+      try {
+        ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+
+        // Set up the view finder use case to display camera preview
+        Preview preview = new Preview.Builder().build();
+
+        // Choose the camera by requiring a lens facing
+        CameraSelector cameraSelector = new CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                .build();
+
+        // Image Analysis
+        ImageAnalysis imageAnalysis =
+                new ImageAnalysis.Builder()
+                        .setTargetResolution(new Size(640, 480))
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build();
+
+        imageAnalysis.setTargetRotation(Surface.ROTATION_270);
+        imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), image -> {
+          int rotationDegrees = image.getImageInfo().getRotationDegrees();
+          Log.e("Degrees_rotation", String.valueOf(rotationDegrees));
+
+
+          /*int rotation;
+          if (rotationDegrees >= 45 && rotationDegrees < 135) {
+            rotation = Surface.ROTATION_270;
+          }else if (rotationDegrees >= 135 && rotationDegrees < 225) {
+            rotation = Surface.ROTATION_180;
+          }else if (rotationDegrees >= 225 && rotationDegrees < 315) {
+            rotation = Surface.ROTATION_90;
+          }else{
+            rotation = Surface.ROTATION_0;
+          }*/
+          //imageAnalysis.setTargetRotation(rotation);
+          // insert your code here.
+
+          @SuppressLint("UnsafeOptInUsageError")
+          Image someImage = image.getImage();
+          imageToRGB(someImage);
+          /*Bitmap bitmapFromImage;
+          if (someImage != null) {
+            bitmapFromImage = toBitmap(someImage);
+            Log.e("Degrees_Width", String.valueOf(bitmapFromImage.getWidth()));
+            Log.e("Degrees_height", String.valueOf(bitmapFromImage.getHeight()));
+          }*/
+
+          image.close();
+        });
+
+        // Connect the preview use case to the previewView
+        preview.setSurfaceProvider(
+                previewView.getSurfaceProvider());
+
+        // Attach use cases to the camera with the same lifecycle owner
+        if (cameraProvider != null) {
+          Camera camera = cameraProvider.bindToLifecycle(
+                  (LifecycleOwner) this,
+                  cameraSelector,
+                  imageAnalysis,
+                  preview);
+        }
+
+      } catch (ExecutionException | InterruptedException e) {
+        e.printStackTrace();
+      }
+
+
+    }, ContextCompat.getMainExecutor(this));
+  }
+
+  private void imageToRGB(final Image image) {
+    // We need wait until we have some size from onPreviewSizeChosen
+    if (previewWidth == 0 || previewHeight == 0) {
+      return;
+    }
+    if (rgbBytes == null) {
+      rgbBytes = new int[previewWidth * previewHeight];
+    }
+    try {
+
+      if (image == null) {
+        return;
+      }
+
+      /*if (isProcessingFrame) {
+        image.close();
+        return;
+      }*/
+
+      Log.e("Degrees_length", String.valueOf(rgbBytes.length));
+      final Image.Plane[] planes = image.getPlanes();
+      fillBytesCameraX(planes, yuvBytes);
+      yRowStride = planes[0].getRowStride();
+      final int uvRowStride = planes[1].getRowStride();
+      final int uvPixelStride = planes[1].getPixelStride();
+
+      ImageUtils.convertYUV420ToARGB8888(
+              yuvBytes[0],
+              yuvBytes[1],
+              yuvBytes[2],
+              previewWidth,
+              previewHeight,
+              yRowStride,
+              uvRowStride,
+              uvPixelStride,
+              rgbBytes);
+
+      processImage();
+
+    } catch (final Exception e) {
+      LOGGER.e(e, "Exception!");
+    }
+  }
+
+  private void fillBytesCameraX(final Image.Plane[] planes, final byte[][] yuvBytes) {
+    // Because of the variable row stride it's not possible to know in
+    // advance the actual necessary dimensions of the yuv planes.
+    for (int i = 0; i < planes.length; ++i) {
+      final ByteBuffer buffer = planes[i].getBuffer();
+      if (yuvBytes[i] == null) {
+        LOGGER.d("Initializing buffer %d at size %d", i, buffer.capacity());
+        yuvBytes[i] = new byte[buffer.capacity()];
+      }
+      buffer.get(yuvBytes[i]);
+    }
+  }
+
+  protected int[] getRgbBytesFromCameraX() {
+    return rgbBytes;
+  }
+
   protected int[] getRgbBytes() {
     imageConverter.run();
     return rgbBytes;
   }
+
 
   protected int getLuminanceStride() {
     return yRowStride;
@@ -202,7 +369,9 @@ public abstract class CameraActivity extends AppCompatActivity
     return yuvBytes[0];
   }
 
-  /** Callback for Camera2 API */
+  /**
+   * Callback for Camera2 API
+   */
   @Override
   public void onImageAvailable(final ImageReader reader) {
     // We need wait until we have some size from onPreviewSizeChosen
@@ -232,30 +401,30 @@ public abstract class CameraActivity extends AppCompatActivity
       final int uvPixelStride = planes[1].getPixelStride();
 
       imageConverter =
-          new Runnable() {
-            @Override
-            public void run() {
-              ImageUtils.convertYUV420ToARGB8888(
-                  yuvBytes[0],
-                  yuvBytes[1],
-                  yuvBytes[2],
-                  previewWidth,
-                  previewHeight,
-                  yRowStride,
-                  uvRowStride,
-                  uvPixelStride,
-                  rgbBytes);
-            }
-          };
+              new Runnable() {
+                @Override
+                public void run() {
+                  ImageUtils.convertYUV420ToARGB8888(
+                          yuvBytes[0],
+                          yuvBytes[1],
+                          yuvBytes[2],
+                          previewWidth,
+                          previewHeight,
+                          yRowStride,
+                          uvRowStride,
+                          uvPixelStride,
+                          rgbBytes);
+                }
+              };
 
       postInferenceCallback =
-          new Runnable() {
-            @Override
-            public void run() {
-              image.close();
-              isProcessingFrame = false;
-            }
-          };
+              new Runnable() {
+                @Override
+                public void run() {
+                  image.close();
+                  isProcessingFrame = false;
+                }
+              };
 
       processImage();
     } catch (final Exception e) {
@@ -318,11 +487,15 @@ public abstract class CameraActivity extends AppCompatActivity
 
   @Override
   public void onRequestPermissionsResult(
-      final int requestCode, final String[] permissions, final int[] grantResults) {
+          final int requestCode, final String[] permissions, final int[] grantResults) {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     if (requestCode == PERMISSIONS_REQUEST) {
       if (allPermissionsGranted(grantResults)) {
-        setFragment();
+        //setFragment();
+
+        // Start CameraX
+        startCamera();
+
       } else {
         requestPermission();
       }
@@ -353,15 +526,15 @@ public abstract class CameraActivity extends AppCompatActivity
                 CameraActivity.this,
                 "Camera permission is required for this demo",
                 Toast.LENGTH_LONG)
-            .show();
+                .show();
       }
-      requestPermissions(new String[] {PERMISSION_CAMERA}, PERMISSIONS_REQUEST);
+      requestPermissions(new String[]{PERMISSION_CAMERA}, PERMISSIONS_REQUEST);
     }
   }
 
   // Returns true if the device supports the required hardware level, or better.
   private boolean isHardwareLevelSupported(
-      CameraCharacteristics characteristics, int requiredLevel) {
+          CameraCharacteristics characteristics, int requiredLevel) {
     int deviceLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
     if (deviceLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY) {
       return requiredLevel == deviceLevel;
@@ -383,7 +556,7 @@ public abstract class CameraActivity extends AppCompatActivity
         }
 
         final StreamConfigurationMap map =
-            characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
 
         if (map == null) {
           continue;
@@ -393,9 +566,9 @@ public abstract class CameraActivity extends AppCompatActivity
         // This should help with legacy situations where using the camera2 API causes
         // distorted or otherwise broken previews.
         useCamera2API =
-            (facing == CameraCharacteristics.LENS_FACING_EXTERNAL)
-                || isHardwareLevelSupported(
-                    characteristics, CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL);
+                (facing == CameraCharacteristics.LENS_FACING_EXTERNAL)
+                        || isHardwareLevelSupported(
+                        characteristics, CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL);
         LOGGER.i("Camera API lv2?: %s", useCamera2API);
         return cameraId;
       }
@@ -410,19 +583,19 @@ public abstract class CameraActivity extends AppCompatActivity
     String cameraId = chooseCamera();
 
     Fragment fragment;
-      CameraConnectionFragment camera2Fragment =
-          CameraConnectionFragment.newInstance(
-                  (size, rotation) -> {
-                    previewHeight = size.getHeight();
-                    previewWidth = size.getWidth();
-                    CameraActivity.this.onPreviewSizeChosen(size, rotation);
-                  },
-              this,
-              getLayoutId(),
-              getDesiredPreviewFrameSize());
+    CameraConnectionFragment camera2Fragment =
+            CameraConnectionFragment.newInstance(
+                    (size, rotation) -> {
+                      previewHeight = size.getHeight();
+                      previewWidth = size.getWidth();
+                      CameraActivity.this.onPreviewSizeChosen(size, rotation);
+                    },
+                    this,
+                    getLayoutId(),
+                    getDesiredPreviewFrameSize());
 
-      camera2Fragment.setCamera(cameraId);
-      fragment = camera2Fragment;
+    camera2Fragment.setCamera(cameraId);
+    fragment = camera2Fragment;
 
     getFragmentManager().beginTransaction().replace(R.id.container, fragment).commit();
   }
@@ -467,7 +640,7 @@ public abstract class CameraActivity extends AppCompatActivity
         if (recognition.getTitle() != null) recognitionTextView.setText(recognition.getTitle());
         if (recognition.getConfidence() != null)
           recognitionValueTextView.setText(
-              String.format("%.2f", (100 * recognition.getConfidence())) + "%");
+                  String.format("%.2f", (100 * recognition.getConfidence())) + "%");
       }
 
       Recognition recognition1 = results.get(1);
@@ -475,7 +648,7 @@ public abstract class CameraActivity extends AppCompatActivity
         if (recognition1.getTitle() != null) recognition1TextView.setText(recognition1.getTitle());
         if (recognition1.getConfidence() != null)
           recognition1ValueTextView.setText(
-              String.format("%.2f", (100 * recognition1.getConfidence())) + "%");
+                  String.format("%.2f", (100 * recognition1.getConfidence())) + "%");
       }
 
       Recognition recognition2 = results.get(2);
@@ -483,7 +656,7 @@ public abstract class CameraActivity extends AppCompatActivity
         if (recognition2.getTitle() != null) recognition2TextView.setText(recognition2.getTitle());
         if (recognition2.getConfidence() != null)
           recognition2ValueTextView.setText(
-              String.format("%.2f", (100 * recognition2.getConfidence())) + "%");
+                  String.format("%.2f", (100 * recognition2.getConfidence())) + "%");
       }
     }
   }
@@ -557,6 +730,8 @@ public abstract class CameraActivity extends AppCompatActivity
   protected abstract Size getDesiredPreviewFrameSize();
 
   protected abstract void onInferenceConfigurationChanged();
+
+  protected abstract void onStartCameraX(final Size size, final int rotation);
 
   @Override
   public void onClick(View v) {
