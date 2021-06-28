@@ -83,9 +83,7 @@ public abstract class CameraActivity extends AppCompatActivity
   private Handler handler;
   private HandlerThread handlerThread;
   private boolean firstTimeStartModel = true;
-  private boolean isProcessingFrame = false;
-
-  private Runnable postInferenceCallback;
+  private boolean isProcessingFrame = true;
 
   private LinearLayout bottomSheetLayout;
   private LinearLayout gestureLayout;
@@ -201,6 +199,7 @@ public abstract class CameraActivity extends AppCompatActivity
     numThreads = Integer.parseInt(threadsTextView.getText().toString().trim());
   }
 
+  @SuppressLint("UnsafeOptInUsageError")
   private void startCamera() {
     ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
 
@@ -231,25 +230,18 @@ public abstract class CameraActivity extends AppCompatActivity
 
           // Execute this method to start the model ONCE
           if (firstTimeStartModel) {
-            /*int rotation;
-            if (rotationDegrees >= 45 && rotationDegrees < 135) {
-              rotation = Surface.ROTATION_270;
-            }else if (rotationDegrees >= 135 && rotationDegrees < 225) {
-              rotation = Surface.ROTATION_180;
-            }else if (rotationDegrees >= 225 && rotationDegrees < 315) {
-              rotation = Surface.ROTATION_90;
-            }else{
-              rotation = Surface.ROTATION_0;
-            }*/
+
             onStartCameraX(ClassifierActivity.DESIRED_PREVIEW_SIZE, rotationDegrees);
 
             firstTimeStartModel = false;
           }
 
-          @SuppressLint("UnsafeOptInUsageError")
-          Image someImage = image.getImage();
-          imageToRGB(someImage);
+          if (isProcessingFrame) {
+            imageToRGB(image.getImage());
+            isProcessingFrame = false;
+          }
 
+          // Close the image to fetch new frame from Camera
           image.close();
         });
 
@@ -275,10 +267,6 @@ public abstract class CameraActivity extends AppCompatActivity
   }
 
   private void imageToRGB(final Image image) {
-    // We need wait until we have some size from onPreviewSizeChosen
-    if (previewWidth == 0 || previewHeight == 0) {
-      return;
-    }
     if (rgbBytes == null) {
       rgbBytes = new int[previewWidth * previewHeight];
     }
@@ -287,11 +275,6 @@ public abstract class CameraActivity extends AppCompatActivity
       if (image == null) {
         return;
       }
-
-      /*if (isProcessingFrame) {
-        image.close();
-        return;
-      }*/
 
       Log.e("Degrees_length", String.valueOf(rgbBytes.length));
       final Image.Plane[] planes = image.getPlanes();
@@ -433,9 +416,7 @@ public abstract class CameraActivity extends AppCompatActivity
   }
 
   protected void readyForNextImage() {
-    if (postInferenceCallback != null) {
-      postInferenceCallback.run();
-    }
+    isProcessingFrame = true;
   }
 
   protected int getScreenOrientation() {

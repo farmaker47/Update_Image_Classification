@@ -65,10 +65,8 @@ public class ClassifierActivity extends CameraActivity {
       return;
     }
 
-    //previewWidth = size.getWidth();
-    //previewHeight = size.getHeight();
-
     sensorOrientation = rotation - getScreenOrientation();
+    LOGGER.i("Camera orientation relative to screen canvas: %d", sensorOrientation);
     LOGGER.i("Camera orientation relative to screen canvas: %d", rotation);
     LOGGER.i("Camera orientation relative to screen canvas: %d", getScreenOrientation());
 
@@ -121,8 +119,7 @@ public class ClassifierActivity extends CameraActivity {
       classifier.close();
       classifier = null;
     }
-    if (device == Device.GPU
-            && (model == Model.QUANTIZED_MOBILENET || model == Model.QUANTIZED_EFFICIENTNET)) {
+    if (device == Device.GPU && (model == Model.QUANTIZED_MOBILENET || model == Model.QUANTIZED_EFFICIENTNET)) {
       LOGGER.d("Not creating classifier: GPU doesn't support quantized models.");
       runOnUiThread(
               () -> {
@@ -131,8 +128,7 @@ public class ClassifierActivity extends CameraActivity {
       return;
     }
     try {
-      LOGGER.d(
-              "Creating classifier (model=%s, device=%s, numThreads=%d)", model, device, numThreads);
+      LOGGER.d("Creating classifier (model=%s, device=%s, numThreads=%d)", model, device, numThreads);
       classifier = Classifier.create(this, model, device, numThreads);
     } catch (IOException | IllegalArgumentException e) {
       LOGGER.e(e, "Failed to create classifier.");
