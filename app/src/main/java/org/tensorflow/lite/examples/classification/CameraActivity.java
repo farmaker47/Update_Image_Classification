@@ -76,35 +76,32 @@ public class CameraActivity extends AppCompatActivity
   private static final int PERMISSIONS_REQUEST = 1;
 
   private static final String PERMISSION_CAMERA = Manifest.permission.CAMERA;
-  protected int previewWidth = 640;
-  protected int previewHeight = 480;
+  private final int previewWidth = 640;
+  private final int previewHeight = 480;
 
   private PreviewView previewView;
 
   private Handler handler;
   private HandlerThread handlerThread;
   private boolean firstTimeStartModel = true;
-  private boolean isProcessingFrame = true;
+  private boolean isProcessingFrame = false;
 
-  private LinearLayout bottomSheetLayout;
   private LinearLayout gestureLayout;
   private BottomSheetBehavior<LinearLayout> sheetBehavior;
-  protected TextView recognitionTextView,
+  private TextView recognitionTextView,
           recognition1TextView,
           recognition2TextView,
           recognitionValueTextView,
           recognition1ValueTextView,
           recognition2ValueTextView;
-  protected TextView frameValueTextView,
+  private TextView frameValueTextView,
           cropValueTextView,
           cameraResolutionTextView,
           rotationTextView,
-          inferenceTimeTextView;
-  protected ImageView bottomSheetArrowImageView;
-  private ImageView plusImageView, minusImageView;
-  private Spinner modelSpinner;
-  private Spinner deviceSpinner;
-  private TextView threadsTextView;
+          inferenceTimeTextView,
+          threadsTextView;
+  private ImageView bottomSheetArrowImageView, plusImageView, minusImageView;
+  private Spinner modelSpinner, deviceSpinner;
 
   private Model model = Model.QUANTIZED_EFFICIENTNET;
   private Device device = Device.CPU;
@@ -112,11 +109,9 @@ public class CameraActivity extends AppCompatActivity
 
   public static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
   private static final float TEXT_SIZE_DIP = 10;
-  private Bitmap rgbFrameBitmap = null;
   private long lastProcessingTimeMs;
   private Integer sensorOrientation;
   private Classifier classifier;
-  private BorderedText borderedText;
   /**
    * Input image size of the model along x axis.
    */
@@ -146,7 +141,7 @@ public class CameraActivity extends AppCompatActivity
     minusImageView = findViewById(R.id.minus);
     modelSpinner = findViewById(R.id.model_spinner);
     deviceSpinner = findViewById(R.id.device_spinner);
-    bottomSheetLayout = findViewById(R.id.bottom_sheet_layout);
+    LinearLayout bottomSheetLayout = findViewById(R.id.bottom_sheet_layout);
     gestureLayout = findViewById(R.id.gesture_layout);
     sheetBehavior = BottomSheetBehavior.from(bottomSheetLayout);
     bottomSheetArrowImageView = findViewById(R.id.bottom_sheet_arrow);
@@ -222,7 +217,6 @@ public class CameraActivity extends AppCompatActivity
 
     cameraProviderFuture.addListener(() -> {
       // Camera provider is now guaranteed to be available
-
       try {
         ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
 
@@ -237,24 +231,22 @@ public class CameraActivity extends AppCompatActivity
         // Image Analysis
         ImageAnalysis imageAnalysis =
                 new ImageAnalysis.Builder()
-                        .setTargetResolution(new Size(640, 480))
+                        .setTargetResolution(DESIRED_PREVIEW_SIZE)
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
         imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), image -> {
+          // Define rotation Degrees of the imageProxy
           int rotationDegrees = image.getImageInfo().getRotationDegrees();
-          Log.e("Degrees_rotation", String.valueOf(rotationDegrees));
+          Log.i("Degrees_rotation", String.valueOf(rotationDegrees));
 
           // Execute this method to start the model ONCE
           if (firstTimeStartModel) {
-
             onStartCameraX(DESIRED_PREVIEW_SIZE, rotationDegrees);
-
             firstTimeStartModel = false;
           }
 
-          if (isProcessingFrame) {
-            //imageToRGB(image.getImage());
+          if (!isProcessingFrame) {
             final int cropSize = Math.min(previewWidth, previewHeight);
 
             runInBackground(
@@ -276,10 +268,10 @@ public class CameraActivity extends AppCompatActivity
                                 });
                       }
                       image.close();
-                      isProcessingFrame = true;
+                      isProcessingFrame = false;
                     });
 
-            isProcessingFrame = false;
+            isProcessingFrame = true;
           }
 
         });
@@ -291,7 +283,7 @@ public class CameraActivity extends AppCompatActivity
         // Attach use cases to the camera with the same lifecycle owner
         if (cameraProvider != null) {
           Camera camera = cameraProvider.bindToLifecycle(
-                  (LifecycleOwner) this,
+                  this,
                   cameraSelector,
                   imageAnalysis,
                   preview);
@@ -309,7 +301,7 @@ public class CameraActivity extends AppCompatActivity
     final float textSizePx =
             TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_DIP, TEXT_SIZE_DIP, getResources().getDisplayMetrics());
-    borderedText = new BorderedText(textSizePx);
+    BorderedText borderedText = new BorderedText(textSizePx);
     borderedText.setTypeface(Typeface.MONOSPACE);
 
     recreateClassifier(getModel(), getDevice(), getNumThreads());
@@ -327,10 +319,6 @@ public class CameraActivity extends AppCompatActivity
   }
 
   protected void onInferenceConfigurationChanged() {
-    if (rgbFrameBitmap == null) {
-      // Defer creation until we're getting camera frames.
-      return;
-    }
     final Device device = getDevice();
     final Model model = getModel();
     final int numThreads = getNumThreads();
@@ -346,9 +334,7 @@ public class CameraActivity extends AppCompatActivity
     if (device == Device.GPU && (model == Model.QUANTIZED_MOBILENET || model == Model.QUANTIZED_EFFICIENTNET)) {
       LOGGER.d("Not creating classifier: GPU doesn't support quantized models.");
       runOnUiThread(
-              () -> {
-                Toast.makeText(this, R.string.tfe_ic_gpu_quant_error, Toast.LENGTH_LONG).show();
-              });
+              () -> Toast.makeText(this, R.string.tfe_ic_gpu_quant_error, Toast.LENGTH_LONG).show());
       return;
     }
     try {
@@ -357,9 +343,7 @@ public class CameraActivity extends AppCompatActivity
     } catch (IOException | IllegalArgumentException e) {
       LOGGER.e(e, "Failed to create classifier.");
       runOnUiThread(
-              () -> {
-                Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
-              });
+              () -> Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show());
       return;
     }
 
@@ -424,11 +408,8 @@ public class CameraActivity extends AppCompatActivity
     super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     if (requestCode == PERMISSIONS_REQUEST) {
       if (allPermissionsGranted(grantResults)) {
-        //setFragment();
-
         // Start CameraX
         startCamera();
-
       } else {
         requestPermission();
       }
