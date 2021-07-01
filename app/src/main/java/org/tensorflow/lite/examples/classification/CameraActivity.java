@@ -19,7 +19,8 @@ package org.tensorflow.lite.examples.classification;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
-import android.media.Image;
+import android.graphics.Bitmap;
+import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -27,8 +28,10 @@ import android.os.HandlerThread;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.Size;
+import android.util.TypedValue;
 import android.view.Surface;
 import android.view.View;
 import android.view.ViewTreeObserver;
@@ -54,17 +57,18 @@ import androidx.lifecycle.LifecycleOwner;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.common.util.concurrent.ListenableFuture;
 
-import java.nio.ByteBuffer;
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-import org.tensorflow.lite.examples.classification.env.ImageUtils;
+import org.tensorflow.lite.examples.classification.env.BorderedText;
 import org.tensorflow.lite.examples.classification.env.Logger;
+import org.tensorflow.lite.examples.classification.tflite.Classifier;
 import org.tensorflow.lite.examples.classification.tflite.Classifier.Device;
 import org.tensorflow.lite.examples.classification.tflite.Classifier.Model;
 import org.tensorflow.lite.examples.classification.tflite.Classifier.Recognition;
 
-public abstract class CameraActivity extends AppCompatActivity
+public class CameraActivity extends AppCompatActivity
         implements View.OnClickListener,
         AdapterView.OnItemSelectedListener {
   private static final Logger LOGGER = new Logger();
@@ -76,9 +80,6 @@ public abstract class CameraActivity extends AppCompatActivity
   protected int previewHeight = 480;
 
   private PreviewView previewView;
-  private byte[][] yuvBytes = new byte[3][];
-  private int[] rgbBytes = null;
-  private int yRowStride;
 
   private Handler handler;
   private HandlerThread handlerThread;
@@ -108,6 +109,22 @@ public abstract class CameraActivity extends AppCompatActivity
   private Model model = Model.QUANTIZED_EFFICIENTNET;
   private Device device = Device.CPU;
   private int numThreads = -1;
+
+  public static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
+  private static final float TEXT_SIZE_DIP = 10;
+  private Bitmap rgbFrameBitmap = null;
+  private long lastProcessingTimeMs;
+  private Integer sensorOrientation;
+  private Classifier classifier;
+  private BorderedText borderedText;
+  /**
+   * Input image size of the model along x axis.
+   */
+  private int imageSizeX;
+  /**
+   * Input image size of the model along y axis.
+   */
+  private int imageSizeY;
 
   @Override
   protected void onCreate(final Bundle savedInstanceState) {
@@ -231,18 +248,40 @@ public abstract class CameraActivity extends AppCompatActivity
           // Execute this method to start the model ONCE
           if (firstTimeStartModel) {
 
-            onStartCameraX(ClassifierActivity.DESIRED_PREVIEW_SIZE, rotationDegrees);
+            onStartCameraX(DESIRED_PREVIEW_SIZE, rotationDegrees);
 
             firstTimeStartModel = false;
           }
 
           if (isProcessingFrame) {
-            imageToRGB(image.getImage());
+            //imageToRGB(image.getImage());
+            final int cropSize = Math.min(previewWidth, previewHeight);
+
+            runInBackground(
+                    () -> {
+                      if (classifier != null) {
+                        final long startTime = SystemClock.uptimeMillis();
+                        final List<Classifier.Recognition> results = classifier.recognizeImage(image.getImage(), sensorOrientation);
+                        lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
+                        LOGGER.e("Degrees: %s", results);
+
+                        runOnUiThread(
+                                () -> {
+                                  showResultsInBottomSheet(results);
+                                  showFrameInfo(previewWidth + "x" + previewHeight);
+                                  showCropInfo(imageSizeX + "x" + imageSizeY);
+                                  showCameraResolution(cropSize + "x" + cropSize);
+                                  showRotationInfo(String.valueOf(sensorOrientation));
+                                  showInference(lastProcessingTimeMs + "ms");
+                                });
+                      }
+                      image.close();
+                      isProcessingFrame = true;
+                    });
+
             isProcessingFrame = false;
           }
 
-          // Close the image to fetch new frame from Camera
-          image.close();
         });
 
         // Connect the preview use case to the previewView
@@ -266,56 +305,67 @@ public abstract class CameraActivity extends AppCompatActivity
     }, ContextCompat.getMainExecutor(this));
   }
 
-  private void imageToRGB(final Image image) {
-    if (rgbBytes == null) {
-      rgbBytes = new int[previewWidth * previewHeight];
+  private void onStartCameraX(final Size size, final int rotation) {
+    final float textSizePx =
+            TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, TEXT_SIZE_DIP, getResources().getDisplayMetrics());
+    borderedText = new BorderedText(textSizePx);
+    borderedText.setTypeface(Typeface.MONOSPACE);
+
+    recreateClassifier(getModel(), getDevice(), getNumThreads());
+    if (classifier == null) {
+      LOGGER.e("No classifier on preview!");
+      return;
+    }
+
+    sensorOrientation = rotation - getScreenOrientation();
+    LOGGER.i("Camera orientation sensor relative to screen canvas: %d", sensorOrientation);
+    LOGGER.i("Camera orientation rotation relative to screen canvas: %d", rotation);
+    LOGGER.i("Camera orientation screen relative to screen canvas: %d", getScreenOrientation());
+
+    LOGGER.i("Initializing at size %dx%d", previewWidth, previewHeight);
+  }
+
+  protected void onInferenceConfigurationChanged() {
+    if (rgbFrameBitmap == null) {
+      // Defer creation until we're getting camera frames.
+      return;
+    }
+    final Device device = getDevice();
+    final Model model = getModel();
+    final int numThreads = getNumThreads();
+    runInBackground(() -> recreateClassifier(model, device, numThreads));
+  }
+
+  private void recreateClassifier(Model model, Device device, int numThreads) {
+    if (classifier != null) {
+      LOGGER.d("Closing classifier.");
+      classifier.close();
+      classifier = null;
+    }
+    if (device == Device.GPU && (model == Model.QUANTIZED_MOBILENET || model == Model.QUANTIZED_EFFICIENTNET)) {
+      LOGGER.d("Not creating classifier: GPU doesn't support quantized models.");
+      runOnUiThread(
+              () -> {
+                Toast.makeText(this, R.string.tfe_ic_gpu_quant_error, Toast.LENGTH_LONG).show();
+              });
+      return;
     }
     try {
-
-      if (image == null) {
-        return;
-      }
-
-      Log.e("Degrees_length", String.valueOf(rgbBytes.length));
-      final Image.Plane[] planes = image.getPlanes();
-      fillBytesCameraX(planes, yuvBytes);
-      yRowStride = planes[0].getRowStride();
-      final int uvRowStride = planes[1].getRowStride();
-      final int uvPixelStride = planes[1].getPixelStride();
-
-      ImageUtils.convertYUV420ToARGB8888(
-              yuvBytes[0],
-              yuvBytes[1],
-              yuvBytes[2],
-              previewWidth,
-              previewHeight,
-              yRowStride,
-              uvRowStride,
-              uvPixelStride,
-              rgbBytes);
-
-      processImage();
-
-    } catch (final Exception e) {
-      LOGGER.e(e, "Exception!");
+      LOGGER.d("Creating classifier (model=%s, device=%s, numThreads=%d)", model, device, numThreads);
+      classifier = Classifier.create(this, model, device, numThreads);
+    } catch (IOException | IllegalArgumentException e) {
+      LOGGER.e(e, "Failed to create classifier.");
+      runOnUiThread(
+              () -> {
+                Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
+              });
+      return;
     }
-  }
 
-  private void fillBytesCameraX(final Image.Plane[] planes, final byte[][] yuvBytes) {
-    // Because of the variable row stride it's not possible to know in
-    // advance the actual necessary dimensions of the yuv planes.
-    for (int i = 0; i < planes.length; ++i) {
-      final ByteBuffer buffer = planes[i].getBuffer();
-      if (yuvBytes[i] == null) {
-        LOGGER.d("Initializing buffer %d at size %d", i, buffer.capacity());
-        yuvBytes[i] = new byte[buffer.capacity()];
-      }
-      buffer.get(yuvBytes[i]);
-    }
-  }
-
-  protected int[] getRgbBytesFromCameraX() {
-    return rgbBytes;
+    // Updates the input image size.
+    imageSizeX = classifier.getImageSizeX();
+    imageSizeY = classifier.getImageSizeY();
   }
 
   @Override
@@ -413,10 +463,6 @@ public abstract class CameraActivity extends AppCompatActivity
       }
       requestPermissions(new String[]{PERMISSION_CAMERA}, PERMISSIONS_REQUEST);
     }
-  }
-
-  protected void readyForNextImage() {
-    isProcessingFrame = true;
   }
 
   protected int getScreenOrientation() {
@@ -520,12 +566,6 @@ public abstract class CameraActivity extends AppCompatActivity
       onInferenceConfigurationChanged();
     }
   }
-
-  protected abstract void processImage();
-
-  protected abstract void onInferenceConfigurationChanged();
-
-  protected abstract void onStartCameraX(final Size size, final int rotation);
 
   @Override
   public void onClick(View v) {

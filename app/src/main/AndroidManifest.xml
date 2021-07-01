@@ -13,9 +13,8 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme.ImageClassification">
         <activity
-            android:name=".ClassifierActivity"
-            android:label="@string/tfe_ic_app_name"
-            android:screenOrientation="portrait">
+            android:name=".CameraActivity"
+            android:label="@string/tfe_ic_app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

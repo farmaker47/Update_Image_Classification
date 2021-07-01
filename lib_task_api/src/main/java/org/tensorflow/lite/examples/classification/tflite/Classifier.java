@@ -21,6 +21,8 @@ import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.graphics.RectF;
+
+import android.media.Image;
 import android.os.SystemClock;
 import android.os.Trace;
 import android.util.Log;
@@ -28,6 +30,8 @@ import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.examples.classification.tflite.Classifier.Device;
 import org.tensorflow.lite.support.common.FileUtil;
 import org.tensorflow.lite.support.image.TensorImage;
@@ -190,18 +194,20 @@ public abstract class Classifier {
   }
 
   /** Runs inference and returns the classification results. */
-  public List<Recognition> recognizeImage(final Bitmap bitmap, int sensorOrientation) {
+  public List<Recognition> recognizeImage(final Image image, int sensorOrientation) {
     // Logs this method so that it can be analyzed with systrace.
     Trace.beginSection("recognizeImage");
 
-    TensorImage inputImage = TensorImage.fromBitmap(bitmap);
-    int width = bitmap.getWidth();
-    int height = bitmap.getHeight();
+    TensorImage inputImage = new TensorImage();
+    inputImage.load(image);
+    int width = image.getWidth();
+    int height = image.getHeight();
     int cropSize = min(width, height);
     // TODO(b/169379396): investigate the impact of the resize algorithm on accuracy.
     // Task Library resize the images using bilinear interpolation, which is slightly different from
     // the nearest neighbor sampling algorithm used in lib_support. See
     // https://github.com/tensorflow/examples/blob/0ef3d93e2af95d325c70ef3bcbbd6844d0631e07/lite/examples/image_classification/android/lib_support/src/main/java/org/tensorflow/lite/examples/classification/tflite/Classifier.java#L310.
+    //Log.v("camera orientation_task",String.valueOf(sensorOrientation));
     ImageProcessingOptions imageOptions =
         ImageProcessingOptions.builder()
             .setOrientation(getOrientation(sensorOrientation))
@@ -263,17 +269,12 @@ public abstract class Classifier {
   }
 
   /* Convert the camera orientation in degree into {@link ImageProcessingOptions#Orientation}.*/
+  // See http://jpegclub.org/exif_orientation.html for info
   private static Orientation getOrientation(int cameraOrientation) {
-    switch (cameraOrientation / 90) {
-      case 3:
-        return Orientation.BOTTOM_LEFT;
-      case 2:
-        return Orientation.BOTTOM_RIGHT;
-      case 1:
-        return Orientation.TOP_RIGHT;
-      default:
-        return Orientation.TOP_LEFT;
+    if (cameraOrientation / 90 == -1) {
+      return Orientation.BOTTOM_LEFT;
     }
+    return Orientation.LEFT_TOP;
   }
 
   /** Gets the name of the model file stored in Assets. */
