@@ -76,8 +76,6 @@ public class CameraActivity extends AppCompatActivity
   private static final int PERMISSIONS_REQUEST = 1;
 
   private static final String PERMISSION_CAMERA = Manifest.permission.CAMERA;
-  private final int previewWidth = 640;
-  private final int previewHeight = 480;
 
   private PreviewView previewView;
 
@@ -247,7 +245,7 @@ public class CameraActivity extends AppCompatActivity
           }
 
           if (!isProcessingFrame) {
-            final int cropSize = Math.min(previewWidth, previewHeight);
+            final int cropSize = Math.min(DESIRED_PREVIEW_SIZE.getWidth(), DESIRED_PREVIEW_SIZE.getHeight());
 
             runInBackground(
                     () -> {
@@ -260,7 +258,7 @@ public class CameraActivity extends AppCompatActivity
                         runOnUiThread(
                                 () -> {
                                   showResultsInBottomSheet(results);
-                                  showFrameInfo(previewWidth + "x" + previewHeight);
+                                  showFrameInfo(DESIRED_PREVIEW_SIZE.getWidth() + "x" + DESIRED_PREVIEW_SIZE.getHeight());
                                   showCropInfo(imageSizeX + "x" + imageSizeY);
                                   showCameraResolution(cropSize + "x" + cropSize);
                                   showRotationInfo(String.valueOf(sensorOrientation));
@@ -315,7 +313,7 @@ public class CameraActivity extends AppCompatActivity
     LOGGER.i("Camera orientation rotation relative to screen canvas: %d", rotation);
     LOGGER.i("Camera orientation screen relative to screen canvas: %d", getScreenOrientation());
 
-    LOGGER.i("Initializing at size %dx%d", previewWidth, previewHeight);
+    LOGGER.i("Initializing at size %dx%d", DESIRED_PREVIEW_SIZE.getWidth(), DESIRED_PREVIEW_SIZE.getHeight());
   }
 
   protected void onInferenceConfigurationChanged() {
