@@ -19,7 +19,6 @@ package org.tensorflow.lite.examples.classification;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
@@ -29,7 +28,6 @@ import android.os.HandlerThread;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.os.SystemClock;
-import android.util.Log;
 import android.util.Size;
 import android.util.TypedValue;
 import android.view.Surface;
@@ -37,10 +35,7 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.widget.AdapterView;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.Spinner;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -83,7 +78,6 @@ public class CameraActivity extends AppCompatActivity
   private boolean firstTimeStartModel = true;
   private boolean isProcessingFrame = false;
 
-  private LinearLayout gestureLayout;
   private BottomSheetBehavior<LinearLayout> sheetBehavior;
 
   private Model model = Model.QUANTIZED_EFFICIENTNET;
@@ -122,16 +116,15 @@ public class CameraActivity extends AppCompatActivity
     }
 
     LinearLayout bottomSheetLayout = findViewById(R.id.bottom_sheet_layout);
-    gestureLayout = findViewById(R.id.gesture_layout);
     sheetBehavior = BottomSheetBehavior.from(bottomSheetLayout);
 
-    ViewTreeObserver vto = gestureLayout.getViewTreeObserver();
+    ViewTreeObserver vto = binding.bottomSheetLayout.gestureLayout.getViewTreeObserver();
     vto.addOnGlobalLayoutListener(
             new ViewTreeObserver.OnGlobalLayoutListener() {
               @Override
               public void onGlobalLayout() {
-                gestureLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
-                int height = gestureLayout.getMeasuredHeight();
+                binding.bottomSheetLayout.gestureLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                int height = binding.bottomSheetLayout.gestureLayout.getMeasuredHeight();
                 sheetBehavior.setPeekHeight(height);
               }
             });
@@ -203,7 +196,6 @@ public class CameraActivity extends AppCompatActivity
         imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), image -> {
           // Define rotation Degrees of the imageProxy
           int rotationDegrees = image.getImageInfo().getRotationDegrees();
-          Log.i("Degrees_rotation", String.valueOf(rotationDegrees));
 
           // Execute this method to start the model ONCE
           if (firstTimeStartModel) {
