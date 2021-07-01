@@ -50,9 +50,8 @@ import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
-import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
-import androidx.lifecycle.LifecycleOwner;
+import androidx.databinding.DataBindingUtil;
 
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -60,6 +59,8 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+
+import org.tensorflow.lite.examples.classification.databinding.TfeIcActivityCameraBinding;
 
 import org.tensorflow.lite.examples.classification.env.BorderedText;
 import org.tensorflow.lite.examples.classification.env.Logger;
@@ -77,8 +78,6 @@ public class CameraActivity extends AppCompatActivity
 
   private static final String PERMISSION_CAMERA = Manifest.permission.CAMERA;
 
-  private PreviewView previewView;
-
   private Handler handler;
   private HandlerThread handlerThread;
   private boolean firstTimeStartModel = true;
@@ -86,20 +85,6 @@ public class CameraActivity extends AppCompatActivity
 
   private LinearLayout gestureLayout;
   private BottomSheetBehavior<LinearLayout> sheetBehavior;
-  private TextView recognitionTextView,
-          recognition1TextView,
-          recognition2TextView,
-          recognitionValueTextView,
-          recognition1ValueTextView,
-          recognition2ValueTextView;
-  private TextView frameValueTextView,
-          cropValueTextView,
-          cameraResolutionTextView,
-          rotationTextView,
-          inferenceTimeTextView,
-          threadsTextView;
-  private ImageView bottomSheetArrowImageView, plusImageView, minusImageView;
-  private Spinner modelSpinner, deviceSpinner;
 
   private Model model = Model.QUANTIZED_EFFICIENTNET;
   private Device device = Device.CPU;
@@ -119,13 +104,15 @@ public class CameraActivity extends AppCompatActivity
    */
   private int imageSizeY;
 
+  private TfeIcActivityCameraBinding binding;
+
   @Override
   protected void onCreate(final Bundle savedInstanceState) {
     LOGGER.d("onCreate " + this);
     super.onCreate(null);
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-    setContentView(R.layout.tfe_ic_activity_camera);
+    binding = DataBindingUtil.setContentView(this, R.layout.tfe_ic_activity_camera);
 
     if (hasPermission()) {
       // Start CameraX
@@ -134,16 +121,9 @@ public class CameraActivity extends AppCompatActivity
       requestPermission();
     }
 
-    threadsTextView = findViewById(R.id.threads);
-    plusImageView = findViewById(R.id.plus);
-    minusImageView = findViewById(R.id.minus);
-    modelSpinner = findViewById(R.id.model_spinner);
-    deviceSpinner = findViewById(R.id.device_spinner);
     LinearLayout bottomSheetLayout = findViewById(R.id.bottom_sheet_layout);
     gestureLayout = findViewById(R.id.gesture_layout);
     sheetBehavior = BottomSheetBehavior.from(bottomSheetLayout);
-    bottomSheetArrowImageView = findViewById(R.id.bottom_sheet_arrow);
-    previewView = findViewById(R.id.viewFinder);
 
     ViewTreeObserver vto = gestureLayout.getViewTreeObserver();
     vto.addOnGlobalLayoutListener(
@@ -165,17 +145,17 @@ public class CameraActivity extends AppCompatActivity
                   case BottomSheetBehavior.STATE_HIDDEN:
                     break;
                   case BottomSheetBehavior.STATE_EXPANDED: {
-                    bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_down);
+                    binding.bottomSheetLayout.bottomSheetArrow.setImageResource(R.drawable.icn_chevron_down);
                   }
                   break;
                   case BottomSheetBehavior.STATE_COLLAPSED: {
-                    bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_up);
+                    binding.bottomSheetLayout.bottomSheetArrow.setImageResource(R.drawable.icn_chevron_up);
                   }
                   break;
                   case BottomSheetBehavior.STATE_DRAGGING:
                     break;
                   case BottomSheetBehavior.STATE_SETTLING:
-                    bottomSheetArrowImageView.setImageResource(R.drawable.icn_chevron_up);
+                    binding.bottomSheetLayout.bottomSheetArrow.setImageResource(R.drawable.icn_chevron_up);
                     break;
                 }
               }
@@ -185,28 +165,15 @@ public class CameraActivity extends AppCompatActivity
               }
             });
 
-    recognitionTextView = findViewById(R.id.detected_item);
-    recognitionValueTextView = findViewById(R.id.detected_item_value);
-    recognition1TextView = findViewById(R.id.detected_item1);
-    recognition1ValueTextView = findViewById(R.id.detected_item1_value);
-    recognition2TextView = findViewById(R.id.detected_item2);
-    recognition2ValueTextView = findViewById(R.id.detected_item2_value);
+    binding.bottomSheetLayout.modelSpinner.setOnItemSelectedListener(this);
+    binding.bottomSheetLayout.deviceSpinner.setOnItemSelectedListener(this);
 
-    frameValueTextView = findViewById(R.id.frame_info);
-    cropValueTextView = findViewById(R.id.crop_info);
-    cameraResolutionTextView = findViewById(R.id.view_info);
-    rotationTextView = findViewById(R.id.rotation_info);
-    inferenceTimeTextView = findViewById(R.id.inference_info);
+    binding.bottomSheetLayout.plus.setOnClickListener(this);
+    binding.bottomSheetLayout.minus.setOnClickListener(this);
 
-    modelSpinner.setOnItemSelectedListener(this);
-    deviceSpinner.setOnItemSelectedListener(this);
-
-    plusImageView.setOnClickListener(this);
-    minusImageView.setOnClickListener(this);
-
-    model = Model.valueOf(modelSpinner.getSelectedItem().toString().toUpperCase());
-    device = Device.valueOf(deviceSpinner.getSelectedItem().toString());
-    numThreads = Integer.parseInt(threadsTextView.getText().toString().trim());
+    model = Model.valueOf(binding.bottomSheetLayout.modelSpinner.getSelectedItem().toString().toUpperCase());
+    device = Device.valueOf(binding.bottomSheetLayout.deviceSpinner.getSelectedItem().toString());
+    numThreads = Integer.parseInt(binding.bottomSheetLayout.threads.getText().toString().trim());
   }
 
   @SuppressLint("UnsafeOptInUsageError")
@@ -276,7 +243,7 @@ public class CameraActivity extends AppCompatActivity
 
         // Connect the preview use case to the previewView
         preview.setSurfaceProvider(
-                previewView.getSurfaceProvider());
+                binding.previewView.getSurfaceProvider());
 
         // Attach use cases to the camera with the same lifecycle owner
         if (cameraProvider != null) {
@@ -462,48 +429,51 @@ public class CameraActivity extends AppCompatActivity
     if (results != null && results.size() >= 3) {
       Recognition recognition = results.get(0);
       if (recognition != null) {
-        if (recognition.getTitle() != null) recognitionTextView.setText(recognition.getTitle());
+        if (recognition.getTitle() != null)
+          binding.bottomSheetLayout.detectedItem.setText(recognition.getTitle());
         if (recognition.getConfidence() != null)
-          recognitionValueTextView.setText(
+          binding.bottomSheetLayout.detectedItemValue.setText(
                   String.format("%.2f", (100 * recognition.getConfidence())) + "%");
       }
 
       Recognition recognition1 = results.get(1);
       if (recognition1 != null) {
-        if (recognition1.getTitle() != null) recognition1TextView.setText(recognition1.getTitle());
+        if (recognition1.getTitle() != null)
+          binding.bottomSheetLayout.detectedItem1.setText(recognition1.getTitle());
         if (recognition1.getConfidence() != null)
-          recognition1ValueTextView.setText(
+          binding.bottomSheetLayout.detectedItem1Value.setText(
                   String.format("%.2f", (100 * recognition1.getConfidence())) + "%");
       }
 
       Recognition recognition2 = results.get(2);
       if (recognition2 != null) {
-        if (recognition2.getTitle() != null) recognition2TextView.setText(recognition2.getTitle());
+        if (recognition2.getTitle() != null)
+          binding.bottomSheetLayout.detectedItem2.setText(recognition2.getTitle());
         if (recognition2.getConfidence() != null)
-          recognition2ValueTextView.setText(
+          binding.bottomSheetLayout.detectedItem2Value.setText(
                   String.format("%.2f", (100 * recognition2.getConfidence())) + "%");
       }
     }
   }
 
   protected void showFrameInfo(String frameInfo) {
-    frameValueTextView.setText(frameInfo);
+    binding.bottomSheetLayout.frameInfo.setText(frameInfo);
   }
 
   protected void showCropInfo(String cropInfo) {
-    cropValueTextView.setText(cropInfo);
+    binding.bottomSheetLayout.cropInfo.setText(cropInfo);
   }
 
   protected void showCameraResolution(String cameraInfo) {
-    cameraResolutionTextView.setText(cameraInfo);
+    binding.bottomSheetLayout.viewInfo.setText(cameraInfo);
   }
 
   protected void showRotationInfo(String rotation) {
-    rotationTextView.setText(rotation);
+    binding.bottomSheetLayout.rotationInfo.setText(rotation);
   }
 
   protected void showInference(String inferenceTime) {
-    inferenceTimeTextView.setText(inferenceTime);
+    binding.bottomSheetLayout.inferenceInfo.setText(inferenceTime);
   }
 
   protected Model getModel() {
@@ -527,9 +497,9 @@ public class CameraActivity extends AppCompatActivity
       LOGGER.d("Updating  device: " + device);
       this.device = device;
       final boolean threadsEnabled = device == Device.CPU;
-      plusImageView.setEnabled(threadsEnabled);
-      minusImageView.setEnabled(threadsEnabled);
-      threadsTextView.setText(threadsEnabled ? String.valueOf(numThreads) : "N/A");
+      binding.bottomSheetLayout.plus.setEnabled(threadsEnabled);
+      binding.bottomSheetLayout.minus.setEnabled(threadsEnabled);
+      binding.bottomSheetLayout.threads.setText(threadsEnabled ? String.valueOf(numThreads) : "N/A");
       onInferenceConfigurationChanged();
     }
   }
@@ -549,27 +519,27 @@ public class CameraActivity extends AppCompatActivity
   @Override
   public void onClick(View v) {
     if (v.getId() == R.id.plus) {
-      String threads = threadsTextView.getText().toString().trim();
+      String threads = binding.bottomSheetLayout.threads.getText().toString().trim();
       int numThreads = Integer.parseInt(threads);
       if (numThreads >= 9) return;
       setNumThreads(++numThreads);
-      threadsTextView.setText(String.valueOf(numThreads));
+      binding.bottomSheetLayout.threads.setText(String.valueOf(numThreads));
     } else if (v.getId() == R.id.minus) {
-      String threads = threadsTextView.getText().toString().trim();
+      String threads = binding.bottomSheetLayout.threads.getText().toString().trim();
       int numThreads = Integer.parseInt(threads);
       if (numThreads == 1) {
         return;
       }
       setNumThreads(--numThreads);
-      threadsTextView.setText(String.valueOf(numThreads));
+      binding.bottomSheetLayout.threads.setText(String.valueOf(numThreads));
     }
   }
 
   @Override
   public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
-    if (parent == modelSpinner) {
+    if (parent == binding.bottomSheetLayout.modelSpinner) {
       setModel(Model.valueOf(parent.getItemAtPosition(pos).toString().toUpperCase()));
-    } else if (parent == deviceSpinner) {
+    } else if (parent == binding.bottomSheetLayout.deviceSpinner) {
       setDevice(Device.valueOf(parent.getItemAtPosition(pos).toString()));
     }
   }

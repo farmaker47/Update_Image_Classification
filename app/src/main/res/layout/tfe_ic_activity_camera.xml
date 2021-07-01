@@ -13,38 +13,45 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 -->
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#00000000">
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <RelativeLayout
+    <data>
+
+    </data>
+
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#00000000"
-        android:orientation="vertical">
+        android:background="#00000000">
 
-        <androidx.camera.view.PreviewView
-            android:id="@+id/viewFinder"
+        <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="match_parent"
+            android:background="#00000000"
+            android:orientation="vertical">
 
-        <androidx.appcompat.widget.Toolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:layout_alignParentTop="true"
-            android:background="@color/tfe_semi_transparent">
+            <androidx.camera.view.PreviewView
+                android:id="@+id/previewView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
 
-            <ImageView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:src="@drawable/tfl2_logo" />
-        </androidx.appcompat.widget.Toolbar>
+            <androidx.appcompat.widget.Toolbar
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+                android:layout_alignParentTop="true"
+                android:background="@color/tfe_semi_transparent">
 
-    </RelativeLayout>
+                <ImageView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:src="@drawable/tfl2_logo" />
+            </androidx.appcompat.widget.Toolbar>
 
-    <include
-        android:id="@+id/bottom_sheet_layout"
-        layout="@layout/tfe_ic_layout_bottom_sheet" />
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+        </RelativeLayout>
+
+        <include
+            android:id="@+id/bottom_sheet_layout"
+            layout="@layout/tfe_ic_layout_bottom_sheet" />
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+</layout>
