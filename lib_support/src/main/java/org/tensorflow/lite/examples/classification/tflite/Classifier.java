@@ -360,16 +360,16 @@ public abstract class Classifier {
 
     // Creates processor for the TensorImage.
     int cropSize = min(bitmap.getWidth(), bitmap.getHeight());
-    int divisioResult = sensorOrientation / 90;
+    int divisionResult = sensorOrientation / 90;
     int numRotation;
     // See explanation for rotation op
     // https://github.com/tensorflow/tflite-support/blob/master/tensorflow_lite_support/java/src/java/org/tensorflow/lite/support/image/ops/Rot90Op.java
-    if (divisioResult == 1) {
+    if (divisionResult == 1) {
       numRotation = 1;
     } else {
       numRotation = 4;
     }
-    Log.e("camera orientation_task", String.valueOf(divisioResult));
+    Log.e("camera orientation_task", String.valueOf(divisionResult));
 
     // TODO(b/143564309): Fuse ops inside ImageProcessor.
     ImageProcessor imageProcessor =
