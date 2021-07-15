@@ -366,8 +366,12 @@ public abstract class Classifier {
     // https://github.com/tensorflow/tflite-support/blob/master/tensorflow_lite_support/java/src/java/org/tensorflow/lite/support/image/ops/Rot90Op.java
     if (divisioResult == 1) {
       numRotation = 1;
+    } else if (divisioResult == 2) {
+      numRotation = 2;
+    } else if (divisioResult == 3) {
+      numRotation = 3;
     } else {
-      numRotation = 4;
+      numRotation = 0;
     }
     Log.e("camera orientation_task", String.valueOf(divisioResult));
 

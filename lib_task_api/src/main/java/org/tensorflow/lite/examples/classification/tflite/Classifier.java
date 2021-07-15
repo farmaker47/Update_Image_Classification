@@ -203,11 +203,6 @@ public abstract class Classifier {
     int width = image.getWidth();
     int height = image.getHeight();
     int cropSize = min(width, height);
-    // TODO(b/169379396): investigate the impact of the resize algorithm on accuracy.
-    // Task Library resize the images using bilinear interpolation, which is slightly different from
-    // the nearest neighbor sampling algorithm used in lib_support. See
-    // https://github.com/tensorflow/examples/blob/0ef3d93e2af95d325c70ef3bcbbd6844d0631e07/lite/examples/image_classification/android/lib_support/src/main/java/org/tensorflow/lite/examples/classification/tflite/Classifier.java#L310.
-    //Log.v("camera orientation_task",String.valueOf(sensorOrientation));
     ImageProcessingOptions imageOptions =
         ImageProcessingOptions.builder()
             .setOrientation(getOrientation(sensorOrientation))
@@ -268,13 +263,28 @@ public abstract class Classifier {
     return recognitions;
   }
 
-  /* Convert the camera orientation in degree into {@link ImageProcessingOptions#Orientation}.*/
-  // See http://jpegclub.org/exif_orientation.html for info
+  /**
+   * See http://jpegclub.org/exif_orientation.html for info
+   * @param cameraOrientation which is the degrees of the Image CameraX is providing
+   * @return orientation to be used with ImageProcessingOptions
+   */
   private static Orientation getOrientation(int cameraOrientation) {
-    if (cameraOrientation / 90 == -1) {
-      return Orientation.BOTTOM_LEFT;
+    Orientation orientation;
+    switch(cameraOrientation / 90) {
+      case 1:
+        orientation = Orientation.LEFT_TOP;
+        break;
+      case 2:
+        orientation = Orientation.BOTTOM_LEFT;
+        break;
+      case 3:
+        orientation = Orientation.RIGHT_BOTTOM;
+        break;
+      default:
+        orientation = Orientation.TOP_RIGHT;
     }
-    return Orientation.LEFT_TOP;
+
+    return orientation;
   }
 
   /** Gets the name of the model file stored in Assets. */

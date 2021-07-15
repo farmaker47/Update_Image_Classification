@@ -28,6 +28,7 @@ import android.os.HandlerThread;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.os.SystemClock;
+import android.util.Log;
 import android.util.Size;
 import android.util.TypedValue;
 import android.view.Surface;
@@ -196,6 +197,7 @@ public class CameraActivity extends AppCompatActivity
         imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), image -> {
           // Define rotation Degrees of the imageProxy
           int rotationDegrees = image.getImageInfo().getRotationDegrees();
+          Log.v("ImageAnalysis_degrees", String.valueOf(rotationDegrees));
 
           // Execute this method to start the model ONCE
           if (firstTimeStartModel) {
@@ -267,9 +269,9 @@ public class CameraActivity extends AppCompatActivity
       return;
     }
 
-    sensorOrientation = rotation - getScreenOrientation();
+    // Use rotation which is the rotation of the Image that is provided by the CameraX
+    sensorOrientation = rotation;
     LOGGER.i("Camera orientation sensor relative to screen canvas: %d", sensorOrientation);
-    LOGGER.i("Camera orientation rotation relative to screen canvas: %d", rotation);
     LOGGER.i("Camera orientation screen relative to screen canvas: %d", getScreenOrientation());
 
     LOGGER.i("Initializing at size %dx%d", DESIRED_PREVIEW_SIZE.getWidth(), DESIRED_PREVIEW_SIZE.getHeight());
